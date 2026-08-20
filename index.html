@@ -510,6 +510,14 @@ button:disabled{ opacity:.55; cursor:not-allowed; box-shadow:none; }
 }
 .id-frame-wrap{ position: relative; display:block; border-radius: var(--radius-md); overflow:hidden; background:#000; }
 .id-frame-wrap video{ display:block; width:100%; height:auto; }
+.mobile-id-capture-btn{
+  display:none; width:100%; margin-top:12px; padding:13px 16px;
+  border:0; border-radius:var(--radius-md); background:var(--grad-brand);
+  color:#fff; font-size:14px; font-weight:800; letter-spacing:.05em;
+  cursor:pointer; box-shadow:var(--shadow-sm); touch-action:manipulation;
+}
+.mobile-id-capture-btn:active{ transform:translateY(1px); }
+.mobile-id-capture-btn:disabled{ opacity:.55; cursor:not-allowed; transform:none; }
 .id-guide{
   position:absolute; left:8%; right:8%; top:16%; bottom:16%;
   border: 2px dashed rgba(34,211,238,.9);
@@ -1059,6 +1067,7 @@ button:disabled{ opacity:.55; cursor:not-allowed; box-shadow:none; }
           <video id="validIdCamera" autoplay playsinline muted></video>
           <div class="id-guide">PLACE ENTIRE ID HERE</div>
         </div>
+        <button type="button" id="mobileIdCaptureBtn" class="mobile-id-capture-btn" onclick="captureIdFromMobileButton()" aria-label="Capture valid ID">📷 CAPTURE ID</button>
       </div>
 
       <!-- CAPTURED ID PREVIEW (temporary, never stored) -->
@@ -1085,7 +1094,7 @@ button:disabled{ opacity:.55; cursor:not-allowed; box-shadow:none; }
         <button type="button" id="idManualFallbackBtn" style="background:#475569; display:none;" onclick="switchToManualNoId()">Enter Name Manually (NO VALID ID)</button>
         <button type="button" style="background:#64748b;" onclick="cancelValidIdVerification()">Cancel</button>
       </div>
-      <div class="id-hint">Position the ID inside the frame and press the <b>ENTER</b> key to capture it. The live camera stops on capture and the captured image is shown above. Reading happens internally and offline on that captured image only — no ID number, address or date of birth is read, shown or stored. The captured image is cleared from memory when verification finishes, is cancelled or is restarted.</div>
+      <div class="id-hint">Position the ID inside the frame. On desktop/laptop, press the <b>ENTER</b> key; on mobile/tablet, tap <b>CAPTURE ID</b>. The live camera stops on capture and the captured image is shown above. Reading happens internally and offline on that captured image only — no ID number, address or date of birth is read, shown or stored. The captured image is cleared from memory when verification finishes, is cancelled or is restarted.</div>
     </div>
 
 
@@ -3956,6 +3965,7 @@ function retryIdScan(){
     _idScanActive = true;
     _idGoodFrames = 0;
     _idCaptureDone = false;
+    _syncMobileIdCaptureButton();
     if(_idCaptureTimer) clearInterval(_idCaptureTimer);
     _idCaptureTimer = setInterval(_idAutoCaptureTick, VISITOR_ID_AUTOCAPTURE_INTERVAL);
     _setIdStatus('READING VALID ID\u2026 keep the ID inside the frame and hold it steady.', '');
@@ -4007,6 +4017,7 @@ function cancelValidIdVerification(){
 
 function _stopIdCamera(){
     _idScanActive = false;
+    _syncMobileIdCaptureButton();
     if(_idScanTimer){ clearInterval(_idScanTimer); _idScanTimer = null; }
     if(_idOcrTimer){ clearInterval(_idOcrTimer); _idOcrTimer = null; }
     if(_idCaptureTimer){ clearInterval(_idCaptureTimer); _idCaptureTimer = null; }
@@ -4026,6 +4037,7 @@ function _stopIdCamera(){
 /* Stops the live camera but keeps the captured preview on screen. */
 function _stopIdLiveCameraOnly(){
     _idScanActive = false;
+    _syncMobileIdCaptureButton();
     if(_idScanTimer){ clearInterval(_idScanTimer); _idScanTimer = null; }
     if(_idCaptureTimer){ clearInterval(_idCaptureTimer); _idCaptureTimer = null; }
     if(_idStream){ try { _idStream.getTracks().forEach(function(t){ t.stop(); }); } catch(e){} }
@@ -4358,6 +4370,30 @@ function _idVariantCanvas(src, mode){
 }
 
 
+/* Device-specific capture instruction. Mobile/tablet gets a visible button;
+   desktop/laptop keeps the existing ENTER-key capture workflow. */
+function _isMobileTabletDevice(){
+    var ua = navigator.userAgent || '';
+    if(/Android/i.test(ua)) return true;
+    if(/iPhone|iPad|iPod/i.test(ua)) return true;
+    // iPadOS can expose a Mac-like user agent while retaining touch input.
+    if(navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
+    if(/IEMobile|Windows Phone/i.test(ua)) return true;
+    return false;
+}
+
+function _idCaptureInstruction(){
+    return _isMobileTabletDevice() ? 'tap CAPTURE ID to capture' : 'press ENTER to capture';
+}
+
+function _syncMobileIdCaptureButton(){
+    var btn = document.getElementById('mobileIdCaptureBtn');
+    if(!btn) return;
+    var show = _isMobileTabletDevice() && _idScanActive && !_idCaptureDone && !_ocrBusy;
+    btn.style.display = show ? 'block' : 'none';
+    btn.disabled = !show;
+}
+
 /* Cheap, OCR-free quality gate. It only reports readiness — capture is MANUAL. */
 function _idAutoCaptureTick(){
     if(!_idScanActive || _ocrBusy || _idCaptureDone) return;
@@ -4366,22 +4402,23 @@ function _idAutoCaptureTick(){
     var canvas = _idFrameCanvas();
     if(!canvas) return;
     var q = _idFrameMetrics(canvas);
+    var instruction = _idCaptureInstruction();
     if(!q.ok){
         _idGoodFrames = 0;
-        _setIdStatus('\u23f3 Align the ID inside the frame (' + q.reason + '). Press ENTER to capture.', 'warn');
-        _setIdProgress(0, 'Waiting for a clear ID \u2014 press ENTER to capture');
+        _setIdStatus('\u23f3 Align the ID inside the frame (' + q.reason + '). ' + instruction + '.', 'warn');
+        _setIdProgress(0, 'Waiting for a clear ID — ' + instruction);
         return;
     }
     _idGoodFrames++;
-    _setIdProgress(100, '\u2713 Image looks clear \u2014 press ENTER to capture');
-    _setIdStatus('\u2713 ID looks clear \u2014 press ENTER to capture and read it.', 'ok');
+    _setIdProgress(100, '\u2713 Image looks clear — ' + instruction);
+    _setIdStatus('\u2713 ID looks clear — ' + instruction + ' and read it.', 'ok');
+    _syncMobileIdCaptureButton();
 }
 
 /* ============================ ENTER TO CAPTURE ============================
-   The Valid ID capture screen has NO capture button. While that screen is
-   active the ENTER key performs the capture, and nothing else: the event is
-   swallowed so it can never submit a form or trigger an unrelated button.
-   A lock prevents duplicate captures from rapid/repeated ENTER presses. */
+   Desktop/laptop: ENTER performs the capture.
+   Mobile/tablet: the on-screen CAPTURE ID button performs the same capture.
+   The actual image/OCR pipeline remains centralized in captureIdNow(). */
 var _idEnterLocked = false;
 
 function _idCaptureScreenActive(){
@@ -4398,16 +4435,31 @@ document.addEventListener('keydown', function(e){
     if(e.key !== 'Enter' && e.keyCode !== 13) return;
     if(!_idCaptureScreenActive()) return;
     var t = e.target;
-    if(t && (t.tagName === 'TEXTAREA')) return;   // never steal a multi-line edit
+    if(t && (t.tagName === 'TEXTAREA')) return;
     // ENTER belongs to the ID capture only: never submit or click anything else.
     e.preventDefault();
     e.stopPropagation();
     if(typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-    if(_idEnterLocked || _idCaptureDone || _ocrBusy) return;   // no duplicate captures
+    if(_idEnterLocked || _idCaptureDone || _ocrBusy) return;
     _idEnterLocked = true;
     try { captureIdNow(); }
-    finally { setTimeout(function(){ _idEnterLocked = false; }, 1200); }
+    finally {
+        setTimeout(function(){ _idEnterLocked = false; _syncMobileIdCaptureButton(); }, 1200);
+    }
 }, true);
+
+/* Mobile/tablet button. This is intentionally device-gated and delegates to
+   the exact same capture pipeline used by the desktop ENTER key. */
+function captureIdFromMobileButton(){
+    if(!_isMobileTabletDevice()) return;
+    if(!_idCaptureScreenActive()) return;
+    if(_idEnterLocked || _idCaptureDone || _ocrBusy) return;
+    _idEnterLocked = true;
+    try { captureIdNow(); }
+    finally {
+        setTimeout(function(){ _idEnterLocked = false; _syncMobileIdCaptureButton(); }, 1200);
+    }
+}
 
 /* MANUAL CAPTURE. The operator decides exactly when the ID image is taken. */
 function captureIdNow(){
@@ -4424,6 +4476,7 @@ function captureIdNow(){
     }
 
     _idCaptureDone = true;
+    _syncMobileIdCaptureButton();
     if(_idCaptureTimer){ clearInterval(_idCaptureTimer); _idCaptureTimer = null; }
 
     // 1) In-memory copy of the EXACT frame the operator captured.
